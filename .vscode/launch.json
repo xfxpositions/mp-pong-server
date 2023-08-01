@@ -1,0 +1,41 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'mp-snake-server'",
+      "cargo": {
+        "args": ["build", "--bin=mp-snake-server", "--package=mp-snake-server"],
+        "filter": {
+          "name": "mp-snake-server",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'mp-snake-server'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=mp-snake-server",
+          "--package=mp-snake-server"
+        ],
+        "filter": {
+          "name": "mp-snake-server",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
