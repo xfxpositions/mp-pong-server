@@ -19,6 +19,7 @@ use crate::game_functions::Ball;
 use crate::game_functions::Rect;
 mod game_functions;
 
+use uuid::Uuid;
 
 const BLOCK_SIZE: u32 = 5;
 
@@ -27,7 +28,8 @@ const BLOCK_SIZE: u32 = 5;
 struct Client {
     addr: SocketAddr,
     block: Block,
-    sent: bool
+    sent: bool,
+    id: String
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,12 +38,11 @@ struct Game {
     tick: u64,
     clients: Vec<Client>,
     is_started: bool,
-    ball: Block
+    ball: Block,
+    headers_sent: bool
 }
 
 const PORT: u16 = 9001;
-
-
 
 async fn update_game(game: Arc<Mutex<Game>>){
     let lock = game.lock().await;
@@ -51,20 +52,20 @@ async fn update_game(game: Arc<Mutex<Game>>){
 async fn handle_writing(
     mut write: WebSocket<PanicOnRead<TcpStream>>,
     addr: SocketAddr,
-    mut rx: Receiver<Message>,
+    rx: Receiver<Message>,
     game: Arc<Mutex<Game>>,
 ) {
     println!("Starting sender for: {:?}", addr);
     let mut count = 0;
-    let mut game = Arc::clone(&game);
-
+    let game = Arc::clone(&game);
+    let mut headers_sent = false;
+    let msg = Message::Text(addr.to_string());
+    write.send(msg).unwrap();
     loop {
         // Check if there are at least 2 clients to start the game
         {
             let mut lock: tokio::sync::MutexGuard<'_, Game> = game.lock().await;
-
-
-
+           
             if lock.clients.len() < 2 {
                 if lock.is_started {
                     println!("Other client disconnected! Game is exiting.");
@@ -72,18 +73,29 @@ async fn handle_writing(
                 } else {
                     lock.is_started = false;
                     println!("Game needs at least 2 clients to start playing");
-                    let msg = Message::Text("Game waiting for other client".to_string());
-                    if let Err(e) = write.write_message(msg) {
-                        println!("Error sending message to client {}: {:?}", addr, e);
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    // let msg = Message::Text("Game waiting for other client".to_string());
+                    // if let Err(e) = write.write_message(msg) {
+                    //     println!("Error sending message to client {}: {:?}", addr, e);
+                    //     break;
+                    // }
+                    tokio::time::sleep(Duration::from_micros(15625)).await;
                     continue;
                 }
             }
             lock.is_started = true;
+            
+           
         }
-
+        
+        {
+            let mut lock = game.lock().await;
+            if !lock.headers_sent {
+                let msg = Message::Text(addr.to_string());
+                write.send(msg).unwrap();
+                lock.headers_sent = true;
+            }
+        }
+        
         //update game mechanincs
         {
             let mut lock = game.lock().await;
@@ -129,7 +141,7 @@ async fn handle_writing(
         }
 
         count += 1;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_micros(15625)).await;
 
         // Check if all clients have sent their data and update the tick
         {
@@ -275,7 +287,8 @@ async fn main() {
         clients: vec![],
         is_started: false,
         ball: ball,
-        score: (0,0)
+        score: (0,0),
+        headers_sent: false
     }));
 
     println!("binded to port: {}", PORT);
@@ -285,10 +298,14 @@ async fn main() {
         let rect = game_functions::Rect::new(750, 750, BLOCK_SIZE*24, BLOCK_SIZE*3);
         let block = Block::new(rect, 50, 50);
 
+        let id = Uuid::new_v4().to_string();
+        let client_id = id.clone();
+
         let client = Client {
             addr,
             block: block,
-            sent: false
+            sent: false,
+            id: id
         };
 
         {
@@ -302,9 +319,11 @@ async fn main() {
         let read = PanicOnWrite(stream.try_clone().unwrap());
         // Run the handshake
         accept(stream).unwrap();
+        
         let read_ws = WebSocket::from_raw_socket(read, Role::Server, None);
-        let write_ws = WebSocket::from_raw_socket(write, Role::Server, None);
+        let mut write_ws = WebSocket::from_raw_socket(write, Role::Server, None);
         let game_clone = game.clone();
+
         tokio::spawn(
             handle_client(read_ws, write_ws, game_clone, addr)
         );
